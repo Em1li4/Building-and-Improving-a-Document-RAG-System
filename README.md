@@ -6,108 +6,123 @@
 [![Chroma DB](https://img.shields.io/badge/VectorDB-ChromaDB-FF6F61?style=for-the-badge&logo=databricks&logoColor=white)](https://www.trychroma.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-This repository contains the implementation, architecture, and optimization of a **Retrieval-Augmented Generation (RAG)** system designed for **Marlowe & Finch**, a lightweight outdoor gear company based in Boulder, Colorado.
+This repository contains the full code, structure, and evaluation framework for **Lab 8: Building and Improving a Document RAG System**.
 
-The project builds a production-ready customer support assistant that answers pre-sale product questions, warranty terms, and shipping/return policies grounded in the company's knowledge base. It incorporates an advanced **Query Rewriting** transformation step to significantly boost vector retrieval accuracy on short or vague customer queries.
+The project models a scenario as a Machine Learning Engineer (MLE) at **Marlowe & Finch**, a lightweight outdoor gear company based in Boulder, Colorado. The goal is to prototype, evaluate, and improve a Retrieval-Augmented Generation (RAG) assistant using LangChain, OpenAI embeddings, Chroma vector store, and a query rewriting transformation step.
 
 ---
 
 ## 📌 Table of Contents
-- [🎯 Business Context](#-business-context)
+- [🎯 Business Context & Objectives](#-business-context--objectives)
 - [📁 Repository Structure](#-repository-structure)
 - [🏗️ System Architecture](#️-system-architecture)
-- [⚙️ Key Components](#️-key-components)
+- [⚙️ Pipeline Implementation & Lab Workflow](#️-pipeline-implementation--lab-workflow)
+- [🧪 Evaluation Queries](#-evaluation-queries)
 - [🚀 Quickstart & Setup](#-quickstart--setup)
-- [📊 Comparative Evaluation: Baseline vs. Query Rewriting](#-comparative-evaluation-baseline-vs-query-rewriting)
-- [🛡️ Deployment Risks & Engineering Recommendations](#️-deployment-risks--engineering-recommendations)
 - [📄 License](#-license)
 
 ---
 
-## 🎯 Business Context
+## 🎯 Business Context & Objectives
 
-**Marlowe & Finch** designs lightweight, three-season backpacking gear (such as $400+ tents and synthetic sleeping bags). Customers are mostly enthusiastic weekend backpackers with technical questions prior to purchase.
+**Marlowe & Finch** sells lightweight three-season backpacking gear (such as tents, sleeping bags, and backpacks). Customer support agents currently handle presale and policy questions manually from an internal knowledge base.
 
-- **Business Challenge:** Human support response times have slipped as presale inquiry volume grows, leading to abandoned shopping carts.
-- **Business Goal:** Build a first-line RAG assistant prototype that retrieves passages from the internal knowledge base (`marlowe_knowledge_base.txt`) and generates grounded, accurate responses, gracefully handing off unanswered edge cases to `support@marloweandfinch.com`.
+- **Challenge:** Response times are slipping as presale question volume grows, leading to abandoned shopping carts.
+- **Objective:** Prototype a grounded RAG assistant that retrieves relevant passages from the internal corpus (`marlowe_knowledge_base.txt`) and answers customer questions accurately.
+- **Key Requirement:** Groundedness. The model must stick strictly to retrieved context, avoid hallucinating unlisted policies, and fall back to `support@marloweandfinch.com` when information is not present.
 
 ---
 
 ## 📁 Repository Structure
 
-The codebase is organized following standard software and ML engineering conventions:
-
 ```bash
 Building-and-Improving-a-Document-RAG-System/
-├── 📄 README.md                        # Project documentation and guide
-├── 📄 requirements.txt                 # Python project dependencies
-├── 📄 .gitignore                       # Version control exclusion rules
-├── 📁 data/                            # Knowledge base text files
-│   └── 📄 marlowe_knowledge_base.txt   # Core customer support knowledge base
-├── 📁 notebooks/                       # Interactive Jupyter notebooks & lab activities
-│   └── 📓 BuildingImprovingDocumentRAGSystem.ipynb # Main interactive lab notebook
-└── 📁 src/                             # Production-ready Python source package
-    ├── 📄 __init__.py                  # Package initializer
-    └── 📄 rag_pipeline.py              # Modular `DocumentRAGPipeline` class
+├── 📄 README.md                        # Documentation and lab guide
+├── 📄 requirements.txt                 # Python dependencies
+├── 📄 .gitignore                       # Version control exclusions
+├── 📁 data/                            # Source knowledge base
+│   └── 📄 marlowe_knowledge_base.txt   # Company product catalog, warranty, and policies
+├── 📁 notebooks/                       # Interactive lab environment
+│   └── 📓 BuildingImprovingDocumentRAGSystem.ipynb # Lab notebook
+└── 📁 src/                             # Modular Python package
+    ├── 📄 __init__.py                  # Package init
+    └── 📄 rag_pipeline.py              # DocumentRAGPipeline implementation class
 ```
 
 ---
 
 ## 🏗️ System Architecture
 
-The RAG pipeline integrates **LangChain LCEL**, **OpenAI Embeddings** (`text-embedding-3-small`), **Chroma DB** vector store, and **GPT-4o** with an optional query rewriting loop:
-
 ```mermaid
 flowchart TD
-    subgraph DataPrep ["1. Document Ingestion & Vector Indexing"]
-        KB["📄 Knowledge Base\n(data/marlowe_knowledge_base.txt)"] --> TextSplitter["✂️ RecursiveCharacterTextSplitter\n(chunk_size=1000, overlap=200)"]
-        TextSplitter --> Chunks["🧩 Text Chunks"]
-        Chunks --> Embedder["🔢 OpenAI Embeddings\n(text-embedding-3-small)"]
-        Embedder --> ChromaDB[("🗄️ Chroma Vector Store")]
+    subgraph Ingestion ["1. Document Ingestion & Chunking"]
+        KB["📄 Knowledge Base\n(data/marlowe_knowledge_base.txt)"] --> TextLoader["📥 TextLoader"]
+        TextLoader --> Splitter["✂️ RecursiveCharacterTextSplitter"]
+        Splitter --> Chunks["🧩 Text Chunks"]
+        Chunks --> Embeddings["🔢 OpenAI Embeddings\n(text-embedding-3-small)"]
+        Embeddings --> ChromaDB[("🗄️ Chroma Vector Store")]
     end
 
-    subgraph QueryPipeline ["2. Query Transformation & Retrieval"]
-        UserQuery["👤 Customer Query\n(e.g., 'is the tent waterproof')"] --> ModeChoice{"Query Rewriting Enabled?"}
-        
-        ModeChoice -- Yes --> LLMRewriter["✏️ GPT-4o Query Rewriter"]
-        LLMRewriter --> RewrittenQuery["🔍 Expanded / Specific Query"]
+    subgraph QueryProcessing ["2. Retrieval & Query Transformation"]
+        UserQuery["👤 Customer Query"] --> Route{"Transformation Step"}
+        Route -- Baseline --> Retriever["🔎 Chroma Similarity Retriever\n(k=4)"]
+        Route -- Rewritten --> QueryRewriter["✏️ GPT-4o Query Rewriter"]
+        QueryRewriter --> RewrittenQuery["🔍 Expanded Query"]
         RewrittenQuery --> Retriever
-        
-        ModeChoice -- No --> Retriever["🔎 Chroma Similarity Retriever\n(Top k=4)"]
-        UserQuery --> ModeChoice
     end
 
-    subgraph AnswerGen ["3. Grounded Generation"]
-        Retriever --> ContextDocs["📚 Retrieved Passages"]
-        ContextDocs --> Prompt["📝 Grounded RAG Prompt Template"]
+    subgraph Generation ["3. Grounded RAG Chain"]
+        Retriever --> FormatDocs["📝 format_docs()"]
+        FormatDocs --> Prompt["📄 RAG Instruction Prompt"]
         UserQuery --> Prompt
-        Prompt --> LLM["🤖 GPT-4o Generator"]
+        Prompt --> LLM["🤖 ChatOpenAI (gpt-4o)"]
         LLM --> Parser["🔤 StrOutputParser"]
-        Parser --> FinalAnswer["💬 Grounded Customer Response"]
+        Parser --> FinalAnswer["💬 Final Grounded Response"]
     end
 ```
 
 ---
 
-## ⚙️ Key Components
+## ⚙️ Pipeline Implementation & Lab Workflow
 
-### 1. Document Ingestion & Chunking
-- **Loader:** `TextLoader` reads the raw support corpus.
-- **Chunking Strategy:** `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)`.
-- **Rationale:** Preserves full context blocks for technical specifications (tent dimensions, hydrostatic head ratings, temperature specs) while ensuring warranty and return terms are not truncated midway through key rules.
+### Part 1: Load and Chunk the Knowledge Base
+- Uses `TextLoader` to load `data/marlowe_knowledge_base.txt`.
+- Splits the document using `RecursiveCharacterTextSplitter` to isolate product specs, warranty terms, and FAQs without fragmenting policy paragraphs.
 
-### 2. Vector Store & Retrieval
-- **Embedding Model:** `text-embedding-3-small` (1536 dimensions).
-- **Vector Index:** `Chroma DB` configured with cosine similarity search ($k=4$).
+### Part 2: Build the Vector Index
+- Generates embeddings via `text-embedding-3-small`.
+- Stores vectors in a `Chroma` vector store and creates a similarity retriever with $k=4$.
 
-### 3. Strict Groundedness Prompting
-The instruction prompt enforces strict boundary conditions:
-1. Speaks in the friendly, professional tone of Marlowe & Finch customer support.
-2. Answers **strictly** using retrieved passages.
-3. Explicitly states when information is unavailable and directs customers to `support@marloweandfinch.com`.
+### Part 3: Grounded Instruction Prompt Engineering
+- Configures system instructions ensuring answers rely **only** on retrieved context.
+- Requires explicit fallback to `support@marloweandfinch.com` when context is insufficient.
 
-### 4. Advanced Query Rewriting
-Short customer inputs (e.g., `"is the tent waterproof"`) often lack semantic overlap with technical documentation. The query rewriter expands short queries into comprehensive search statements (e.g., `"What is the hydrostatic head waterproof rating and rain performance of the Trailhead 2 tent?"`), increasing top-$k$ retrieval precision.
+### Part 4: Assemble & Test Baseline RAG Chain
+- Chains retriever, prompt, LLM (`gpt-4o`), and output parser using LangChain Expression Language (LCEL).
+
+### Part 5: Add Query Rewriting
+- Implements a query expansion step using GPT-4o to rewrite short or underspecified queries before sending them to the vector retriever.
+
+### Part 6 & 7: Analysis & Reflection
+- Evaluates behavior, trade-offs (cost/latency of query rewriting), deployment risks, and AI tool usage.
+
+---
+
+## 🧪 Evaluation Queries
+
+The pipeline is tested against three specific customer queries designed to evaluate different retrieval challenges:
+
+1. **Short / Underspecified Query:**  
+   `"is the tent waterproof"`  
+   *Tests vector retrieval performance on vague keywords vs. technical specs.*
+
+2. **Scenario & Policy Edge Case:**  
+   `"can i return a tent i used on a weekend trip"`  
+   *Tests retrieval of the strict "unused / no outdoor signs" return policy rule vs. general return terms.*
+
+3. **Missing Knowledge Base Information:**  
+   `"do you ship to australia"`  
+   *Tests whether the model adheres to groundedness guidelines and correctly falls back to support email when a destination is unlisted.*
 
 ---
 
@@ -115,75 +130,43 @@ Short customer inputs (e.g., `"is the tent waterproof"`) often lack semantic ove
 
 ### Prerequisites
 - Python 3.9+
-- An OpenAI API Key (`OPENAI_API_KEY`)
+- OpenAI API Key (`OPENAI_API_KEY`)
 
-### 1. Clone the Repository
+### 1. Installation
 ```bash
 git clone https://github.com/Em1li4/Building-and-Improving-a-Document-RAG-System.git
 cd Building-and-Improving-a-Document-RAG-System
-```
-
-### 2. Create a Virtual Environment & Install Dependencies
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Set OpenAI API Key
+### 2. Set API Key
 ```bash
 export OPENAI_API_KEY="your-openai-api-key"
 ```
 
-### 4. Run via Python Source Module (`src/`)
+### 3. Execution Options
+
+**Option A: Run Python Module (`src/`)**
 ```python
 from src.rag_pipeline import DocumentRAGPipeline
 
-# Initialize and build pipeline
-rag = DocumentRAGPipeline(knowledge_base_path="data/marlowe_knowledge_base.txt")
-rag.load_and_chunk()
-rag.build_vector_index()
-rag.assemble_chain()
+pipeline = DocumentRAGPipeline()
+pipeline.load_and_chunk()
+pipeline.build_vector_index()
+pipeline.assemble_chain()
 
-# Query without query rewriting (Baseline)
-baseline_res = rag.query("is the tent waterproof", use_query_rewriting=False)
-print("Baseline Answer:\n", baseline_res["answer"])
-
-# Query with query rewriting
-rewritten_res = rag.query("is the tent waterproof", use_query_rewriting=True)
-print("\nRewritten Query:", rewritten_res["rewritten_query"])
-print("Rewritten-Query Answer:\n", rewritten_res["answer"])
+# Execute baseline query
+response = pipeline.query("is the tent waterproof", use_query_rewriting=False)
+print(response["answer"])
 ```
 
-### 5. Run the Interactive Jupyter Notebook
+**Option B: Run Notebook**
 ```bash
 jupyter notebook notebooks/BuildingImprovingDocumentRAGSystem.ipynb
 ```
 
 ---
 
-## 📊 Comparative Evaluation: Baseline vs. Query Rewriting
-
-| Query Type | Customer Input | Baseline Response | Query Rewritten Response | Quality Impact |
-| :--- | :--- | :--- | :--- | :--- |
-| **Short / Vague** | `"is the tent waterproof"` | Answers basic Trailhead 2 specs (2,000 mm rating). | Expands query to fetch fly, floor, and Alpine storm limitations. | 🟢 **Significantly Improved** |
-| **Scenario-Based** | `"can i return a tent i used on a weekend trip"` | Gives general return policy outline. | Accurately retrieves the strict outdoor usage exclusion rule. | 🟢 **Highly Accurate** |
-| **Edge Case** | `"do you ship to australia"` | Flags Australia as absent from listed countries. | Confirms no shipping to Australia and directs to support email. | 🟢 **Safe Handoff** |
-
----
-
-## 🛡️ Deployment Risks & Engineering Recommendations
-
-### Key Risks
-1. **Third-Party / Off-Catalog Queries:** Asking about unlisted products (e.g., winter 4-season mountaineering tents or external brands) could trigger subtle hallucinations if groundedness prompts are violated.
-2. **Latency & Cost Overhead:** Adding an LLM query rewriting step adds ~300-500ms of latency and doubles API call volume per query.
-
-### Recommendations Prior to Production Launch
-- **Conditional Query Transformation:** Apply query rewriting **only** when customer input length is $< 6$ words or when initial vector similarity score falls below a threshold ($<0.75$).
-- **Output Guardrails:** Integrate an automated validator to verify prices/specs against canonical data before displaying answers to live shoppers.
-
----
-
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License.
